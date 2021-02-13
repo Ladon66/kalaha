@@ -38,12 +38,12 @@ class KPiece(Enum):
 
 
 class KBoard():
-    def __init__(self, n:int=6, m:int=4) -> None:
+    def __init__(self) -> None:
         self._n=n                            # Anzahl der Mulden pro Spieler, der Wert wird übergeben
         self._brett: List[int] = [0]*(self._n*2+2)  # Gesamtes Brett
         self._gMuldeSpieler:int = self._n+1  # Position der Mulde des Spielers
         self._gMuldeGegner:int  = 0          # Position der Mulde des Gegners
-        self._turn:KPiece = KPiece.SPIELER          # Der Spieler startet immer
+        self._turn:KPiece = startspieler     # Der startende Spieler
         for i1 in range (self._n*2+2):
             if i1 not in (self._gMuldeSpieler, self._gMuldeGegner):
                 self._brett[i1]=m
@@ -70,7 +70,7 @@ class KBoard():
         else:
             return 0
 
-    def move(self, location: Move) -> KBoard:       # location ist die Startmulde
+    def move(self, location: Move, verbose:bool) -> KBoard:       # location ist die Startmulde
         temp_brett: KBoard = copy.deepcopy(self)
         start_mulde:int = location
         zz1 = temp_brett._brett[start_mulde]
@@ -80,11 +80,6 @@ class KBoard():
             if location != self.gegner_Mulde():
                  zz1 -=1
                  temp_brett._brett[location] +=1
-        if regel_Extrarunde:
-            if location == self.eigene_Mulde():
-                print ("+++++ Extrarunde +++++")
-                pass
-            pass
         # Wenn der letzte Stein in einer leeren Spielmulde des aktiven Spielers landet und 
         # direkt gegenüber in der gegnerischen Mulde ein oder mehrere Steine liegen, sind 
         # sowohl der letzte Stein als auch die gegenüberliegenden Steine gefangen und werden 
@@ -92,6 +87,8 @@ class KBoard():
         if regel_Fangen:
             #print ("wegen Fangen: location: {}, startmulde: {} turn: ".format(location, start_mulde)+ str(self._turn)) 
             if temp_brett._brett[location]==1 and location in self.eigene_Felder():
+                if verbose:
+                    print ("Fangen!")
                 # z1 ist die gegenüberliegende Mulde
                 z1=(temp_brett._n*2+2)-location
                 # if self._turn == KPiece.SPIELER:
@@ -100,6 +97,11 @@ class KBoard():
                 temp_brett._brett[self.eigene_Mulde()] +=1
                 temp_brett._brett[self.eigene_Mulde()] += temp_brett._brett[z1]
                 temp_brett._brett[z1]=0
+        if not (regel_Extrarunde) or location != self.eigene_Mulde():
+            temp_brett._turn = KPiece.opposite(self._turn)
+        else:
+            if verbose:
+                print ("Extrarunde!")
         return temp_brett
 
     @property
@@ -150,9 +152,6 @@ class KBoard():
         else:
             return diff * (-1)
 
-    def naechster_spieler(self)->None:
-       self._turn = KPiece.opposite(self._turn)
-
     # Hier zeichnen wir das Brett
     def __repr__(self) -> str:
         str1 =""
@@ -190,14 +189,14 @@ def alphabeta(board: KBoard, maximizing: bool, original_player: KPiece, max_dept
 
     if maximizing: # die eigenen Gewinne maximieren
         for move in board.legal_moves:
-            result: float = alphabeta(board.move(move), False, original_player, max_depth - 1, alpha, beta)
+            result: float = alphabeta(board.move(move, False), False, original_player, max_depth - 1, alpha, beta)
             alpha = max(result, alpha)
             if beta <= alpha:
                 break
         return alpha
     else:  # Die Gewinne des Gegners Minimieren
         for move in board.legal_moves:
-            result = alphabeta(board.move(move), True, original_player, max_depth - 1, alpha, beta)
+            result = alphabeta(board.move(move, False), True, original_player, max_depth - 1, alpha, beta)
             beta = min(result, beta)
             if beta <= alpha:
                 break
@@ -210,7 +209,7 @@ def find_best_move(board: KBoard, max_depth: int = 6) -> Move:
     best_eval: float = float("-inf")
     best_move: Move = Move(-1)
     for move in board.legal_moves:
-        result: float = alphabeta(board.move(move), False, board.turn, max_depth)
+        result: float = alphabeta(board.move(move, False), False, board.turn, max_depth)
         #print ("result: {0}, best_eval: {1}".format(result, best_eval))
         if result > best_eval:
             best_eval = result
@@ -218,8 +217,10 @@ def find_best_move(board: KBoard, max_depth: int = 6) -> Move:
     return best_move
 
 
-n=3       # Anzahl der Mulden pro Spieler
-m=4       # Anzahl der Steine pro Mulde
+n:int=3                               # Anzahl der Mulden pro Spieler
+m:int=4                               # Anzahl der Steine pro Mulde
+startspieler:KPiece = KPiece.SPIELER  # Startspieler
+#startspieler:KPiece = KPiece.COMPUTER  # Startspieler
 # Wenn der letzte Stein in der eigenen Gewinnmulde landet, gewinnt der aktive Spieler 
 # eine Extra-Runde (oder: Bonus-Zug). Dies kann der Spieler auch mehrmals wiederholen 
 # und darf dann jeweils weiterspielen.
@@ -229,7 +230,7 @@ regel_Extrarunde: bool = True
 # sowohl der letzte Stein als auch die gegenüberliegenden Steine gefangen und werden 
 # zu den eigenen Steinen in die Gewinnmulde gelegt.
 regel_Fangen: bool = True
-board: KBoard = KBoard(n,m)
+board: KBoard = KBoard()
 print (board)
 
 def get_player_move() -> Move:
@@ -247,18 +248,15 @@ def get_player_move() -> Move:
 if __name__ == "__main__":
     # Spiel-Hauptschleife
     while True:
-        human_move: Move = get_player_move() # Der Move ist die Zahleingabe!
-        board:KBoard = board.move(human_move)
-        print(board)
-        board.naechster_spieler()
-        if board.legal_moves==[]:
-            print("Spiel ist aus")
-            break
-        computer_move: Move = find_best_move(board)
-        print(f"Zug des Computers ist {computer_move}")
-        board = board.move(computer_move)
-        print(board)
-        board.naechster_spieler()
+        if board.turn()==KPiece.SPIELER:
+            human_move: Move = get_player_move() # Der Move ist die Zahleingabe!
+            board:KBoard = board.move(human_move, True)
+            print(board)
+        else:
+             computer_move: Move = find_best_move(board)
+             print(f"Zug des Computers ist {computer_move}")
+             board = board.move(computer_move, True)
+             print(board)
         if board.legal_moves==[]:
             print("Spiel ist aus")
             break
