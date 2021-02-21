@@ -11,13 +11,80 @@ Created on Wed Feb  3 18:34:14 2021
 #
 #       Regeln siehe https://de.wikipedia.org/wiki/Kalaha
 #
+#  Hinweise:
+#  Die Button-Technik funktioniert sehr schlecht
+#   Darstellung von Farben, aufblinken lassen etc. klappt nicht
+#  Möglicherweise arbeitet auch die Bewertungs-Funktion nicht richtig 
+#   (bezüglich Fangen und Extrarunde)
 
 from __future__ import annotations
-from typing import List, NewType
+from typing import List, NewType, Dict
 import copy
 from enum import Enum
+import pygame, time
+from typing import Dict, List
+from pygame import Surface, Rect, Color
+pygame.init()
 
+# Farben sind von hier: https://www.colorcombos.com/color-schemes/203/ColorCombo203.html
+COLOR1:Color = pygame.Color( 27,  97, 155) # matisse / Inactive Color
+COLOR2:Color = pygame.Color(172, 203, 224) # regent st blue / Active Color beim drüber-hovern
+COLOR3:Color = pygame.Color(211, 224, 234) # botticelli  / Hintergrund
+COLOR4:Color = pygame.Color(248, 242, 229) # yellow orange
+COLOR5:Color = pygame.Color(154, 154, 155) # manatee   / Farbe der Schrift
+COLOR6:Color = pygame.Color(215, 90, 32) # hot cinnamon
+FONT = pygame.font.Font(None, 30)
+
+n=10 # N ist zwischen 3 und 10
+kList:List[Dict] =[]
+screen:Surface = pygame.display.set_mode((1000, 460))
+screen.fill(COLOR3)
+clock = pygame.time.Clock()
 Move = NewType('Move', int)
+
+
+def tunix()->None:
+    pass 
+
+def whatMove(i)->None:
+    global kList
+    l1:int=len(kList)-1
+    button:Dict=kList[l1]
+    button['text']= FONT.render(str(i), True, COLOR5)
+    draw_button(button, screen)
+
+
+
+def quit_game()->None:  # A callback function for the button.
+    pygame.quit()
+
+def draw_button(button:Dict, screen)->None:
+    """Draw the button rect and the text surface."""
+    pygame.draw.rect(screen, button['color'], button['rect'])
+    screen.blit(button['text'], button['text rect'])
+
+
+def create_button(x, y, w, h, text, callback, bNummer):
+    """A button is a dictionary that contains the relevant data.
+    Consists of a rect, text surface and text rect, color and a
+    callback function.
+    """
+    # The button is a dictionary consisting of the rect, text,
+    # text rect, color and the callback function.
+    text_surf:Surface = FONT.render(text, True, COLOR5)
+    button_rect:Rect = pygame.Rect(x, y, w, h)
+    text_rect:Rect = text_surf.get_rect(center=button_rect.center)
+    button:Dict = {
+        'rect': button_rect,
+        'text': text_surf,
+        'text rect': text_rect,
+        'color': COLOR1,
+        'callback': callback,
+        'bNummer':bNummer
+        }
+    return button
+
+
 
 
 class KPiece(Enum):
@@ -44,6 +111,7 @@ class KBoard():
         self._gMuldeSpieler:int = self._n+1  # Position der Mulde des Spielers
         self._gMuldeGegner:int  = 0          # Position der Mulde des Gegners
         self._turn:KPiece = startspieler     # Der startende Spieler
+        self._message:str ="init"                # Die Info die dem Spieler angezeigt werden soll.
         for i1 in range (self._n*2+2):
             if i1 not in (self._gMuldeSpieler, self._gMuldeGegner):
                 self._brett[i1]=m
@@ -57,7 +125,6 @@ class KBoard():
         else:
            return [Move(l) for l in range(self._n+2,self._n*2+2)]
 
-    
     def eigene_Mulde(self)->int:
         if self._turn==KPiece.SPIELER:
             return self._n+1
@@ -72,6 +139,7 @@ class KBoard():
 
     def move(self, location: Move, verbose:bool) -> KBoard:       # location ist die Startmulde
         temp_brett: KBoard = copy.deepcopy(self)
+        temp_brett._message='...'                           # erstmal die Rückmeldung auf Leer setzen.
         start_mulde:int = location
         zz1 = temp_brett._brett[start_mulde]
         temp_brett._brett[start_mulde]=0
@@ -88,7 +156,8 @@ class KBoard():
             #print ("wegen Fangen: location: {}, startmulde: {} turn: ".format(location, start_mulde)+ str(self._turn)) 
             if temp_brett._brett[location]==1 and location in self.eigene_Felder():
                 if verbose:
-                    print ("Fangen!")
+                    temp_brett._message='Fangen' 
+                    print ("Fangen für ", self._turn)
                 # z1 ist die gegenüberliegende Mulde
                 z1=(temp_brett._n*2+2)-location
                 # if self._turn == KPiece.SPIELER:
@@ -101,7 +170,8 @@ class KBoard():
             temp_brett._turn = KPiece.opposite(self._turn)
         else:
             if verbose:
-                print ("Extrarunde!")
+                temp_brett._message='Extrarunde für ' + str(self.turn())
+                print ("Extrarunde für ", self._turn)
         return temp_brett
 
     @property
@@ -136,12 +206,6 @@ class KBoard():
         print (str(self._brett[self._gMuldeGegner])+ ":"+ str(self._brett[self._gMuldeSpieler]))
         return
 
-
-    # Gib Ja zurück, wenn unentschieden
-    @property
-    def is_draw(self) -> bool:
-        self._brett[self._gMuldeGegner]==self._brett[self._gMuldeSpieler]
-
     # Evaluate muss anzeigen, wie gut die Stellung ist!!
     # Zunächst ist der Evaluate-Wert gleich dem Unterschied in den Gewinnmulden
     # ohne das Spielende zu beurteilen
@@ -151,6 +215,40 @@ class KBoard():
             return diff
         else:
             return diff * (-1)
+
+    def wert_feld(self, i)->int:
+        return self._brett[i]
+
+    def belege_werte(self, button_list:List[Dict]):
+        # Belegung der button_list mit den Werten aus board:
+        # print ("belege Werte: ", self._message)
+        i=0
+        for button in button_list:
+            if button['bNummer']!=99: # 99er sind andere Buttons
+                wert:int=self.wert_feld(i)
+                button['text']= FONT.render(str(wert), True, COLOR5)
+                draw_button(button, screen)
+                i += 1
+        # Jetzt die Message schreiben.
+        button = button_list[2]
+        print ("belege Werte: ",self._message )
+        button['text']=FONT.render(self._message, True, COLOR5)
+        button['color']=COLOR1
+        draw_button(button, screen)
+        time.sleep(1)
+        button['color']=COLOR1
+
+    
+    def show_message(self, button_list:List[Dict], msg:str, i:int):
+        button=button_list[2]
+        print ("show_Message: ",button)
+        button['text']=FONT.render(msg, True, COLOR6)
+        draw_button(button, screen)
+        time.sleep(i)
+
+    def get_message (self)->str:
+        return self._message
+
 
     # Hier zeichnen wir das Brett
     def __repr__(self) -> str:
@@ -202,12 +300,14 @@ def alphabeta(board: KBoard, maximizing: bool, original_player: KPiece, max_dept
                 break
         return beta
 
+button_list:List[Dict]=[]
 
 # Den besten möglichen Zug an der aktuellen Position finden
 # und bis zu max_depth vorausschauen
-def find_best_move(board: KBoard, max_depth: int = 6) -> Move:
+def find_best_move(board: KBoard, max_depth) -> Move:
     best_eval: float = float("-inf")
     best_move: Move = Move(-1)
+    print ("Legal Moves:", board.legal_moves)
     for move in board.legal_moves:
         result: float = alphabeta(board.move(move, False), False, board.turn, max_depth)
         #print ("result: {0}, best_eval: {1}".format(result, best_eval))
@@ -217,8 +317,11 @@ def find_best_move(board: KBoard, max_depth: int = 6) -> Move:
     return best_move
 
 
-n:int=3                               # Anzahl der Mulden pro Spieler
-m:int=4                               # Anzahl der Steine pro Mulde
+
+
+n:int=4                               # Anzahl der Mulden pro Spieler
+m:int=5                               # Anzahl der Steine pro Mulde
+level:int=6                           # Schwierigkeitsgrad
 startspieler:KPiece = KPiece.SPIELER  # Startspieler
 #startspieler:KPiece = KPiece.COMPUTER  # Startspieler
 # Wenn der letzte Stein in der eigenen Gewinnmulde landet, gewinnt der aktive Spieler 
@@ -229,35 +332,92 @@ regel_Extrarunde: bool = True
 # direkt gegenüber in der gegnerischen Mulde ein oder mehrere Steine liegen, sind 
 # sowohl der letzte Stein als auch die gegenüberliegenden Steine gefangen und werden 
 # zu den eigenen Steinen in die Gewinnmulde gelegt.
-regel_Fangen: bool = True
-board: KBoard = KBoard()
-print (board)
-
-def get_player_move() -> Move:
-    player_move: Move = Move(-1)
-    while player_move not in board.legal_moves:
-        """if board._turn == KPiece.SPIELER:
-            print("Spieler ist am Zug \n")
-        else:
-            print("Computer ist am Zug \n")"""
-        play: int = int(input("Legales Feld eingeben (0-"+str(n)+"): "))
-        player_move = Move(play)
-    return player_move
+regel_Fangen: bool = False
 
 
-if __name__ == "__main__":
-    # Spiel-Hauptschleife
+def main():
+
+    # Buttons mit 99er Nummern sind keine Mulden sondern haben andere Aufgaben.
+    button1:Dict = create_button(380, 380, 100, 50, 'Settings', tunix,99)
+    button2:Dict = create_button(530, 380, 100, 50, 'Quit', quit_game,99)
+    # Das wird der Nachrichten - Button!!!!
+    button3:Dict = create_button(330, 300, 350, 50, '...', tunix,99)
+    # Zeigt eine Nachricht an für eine bestimmte Zeit in Sekunden
+
+    schritt_Weite = 80      # Die Felder sind 60 breit und der Zwischenraum ist 20
+    gesamt_Breite = (n+2)*schritt_Weite-20   # Einen Zwischenraum abziehen
+    xstart_Links   = (1000-gesamt_Breite)/2
+    #Gewinnmulde Gegner
+    kList.append(create_button(xstart_Links, 110, 60, 100, '0', tunix,0))
+    # Untere Reihe für Spielermulden
+    for i in range (1,n+1):
+        xstart_Links += schritt_Weite
+        kList.append(create_button(xstart_Links, 200, 60, 60, str(m), whatMove,i))
+    #Gewinnmulde Spieler
+    kList.append(create_button(xstart_Links+schritt_Weite, 110, 60, 100, '0', tunix,0))
+        # Obere Reihe für Spielermulden
+    for i in range (n+2,2*n+2):
+        kList.append(create_button(xstart_Links,  80, 60, 60, str(m), tunix,0))
+        xstart_Links -= 80
+
+
+    # A list that contains all buttons.
+    button_list = [button1, button2, button3] +kList
+    board: KBoard = KBoard()
+
+    board.belege_werte(button_list)
+    board.show_message(button_list, 'Start',1)
+
     while True:
-        if board.turn()==KPiece.SPIELER:
-            human_move: Move = get_player_move() # Der Move ist die Zahleingabe!
-            board:KBoard = board.move(human_move, True)
-            print(board)
-        else:
-             computer_move: Move = find_best_move(board)
-             print(f"Zug des Computers ist {computer_move}")
-             board = board.move(computer_move, True)
-             print(board)
-        if board.legal_moves==[]:
-            print("Spiel ist aus")
-            break
-    board.auswertung()
+        for event in pygame.event.get():
+            # This block is executed once for each MOUSEBUTTONDOWN event.
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                # 1 is the left mouse button, 2 is middle, 3 is right.
+                if event.button == 1:
+                    for button in button_list:
+                        # `event.pos` is the mouse position.
+                        if button['rect'].collidepoint(event.pos):
+                            # Increment the number by calling the callback
+                            # function in the button list.
+                            # 99er Button: Aufruf ohne Parameter
+                            if button['bNummer']==99:
+                                button['callback']()
+                            elif button['bNummer']>0:
+                                board:KBoard = board.move(button['bNummer'], True)
+                                print (board)
+                                board.belege_werte(button_list)
+                                if board.legal_moves==[]:
+                                    print("Spiel ist aus")
+                                    board.auswertung()
+                                    break
+                                while board.turn()==KPiece.COMPUTER:
+                                    print("C ist dran: ", board.turn())
+                                    computer_move: Move = find_best_move(board, level)
+                                    print(f"Zug des Computers ist {computer_move}")
+                                    board = board.move(computer_move, True)
+                                    print (board)
+                                    board.belege_werte(button_list)
+                                if board.legal_moves==[]:
+                                    print("Spiel ist aus")
+                                    board.auswertung()
+                                    break
+            elif event.type == pygame.MOUSEMOTION:
+                # When the mouse gets moved, change the color of the
+                # buttons if they collide with the mouse.
+                # Wenn callback = tunix ist das ein nicht aufrufbares Feld und 
+                # wird anders gerendert.
+                for button in button_list:
+                    if button['rect'].collidepoint(event.pos) and button['callback']!=tunix:
+                        button['color'] = COLOR2
+                    else:
+                        button['color'] = COLOR1
+
+        #screen.fill(WHITE)
+        for button in button_list:
+            draw_button(button, screen)
+        pygame.display.update()
+        clock.tick(30)
+
+
+main()
+pygame.quit()
